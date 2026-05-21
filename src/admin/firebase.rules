@@ -1,0 +1,132 @@
+/**
+ * Firebase Firestore Security Rules
+ * Place this in: firebase/firestore.rules
+ */
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Admin authentication
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role in 
+             ['super-admin', 'product-manager', 'inventory-manager', 'finance-manager', 'customer-support'];
+    }
+    
+    function isSuperAdmin() {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'super-admin';
+    }
+    
+    function hasRole(role) {
+      return isSignedIn() && 
+             get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == role;
+    }
+    
+    function hasPermission(resource, action) {
+      let adminDoc = get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
+      return adminDoc.role == 'super-admin' ||
+             adminDoc.permissions.any(p => p.resource == resource && p.action == action);
+    }
+    
+    // Admin Collection
+    match /admins/{adminId} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+      allow create: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+    
+    // Products Collection
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && hasPermission('products', 'create');
+      allow update: if isAdmin() && hasPermission('products', 'update');
+      allow delete: if isAdmin() && hasPermission('products', 'delete');
+      
+      // Product images subcollection
+      match /images/{imageId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin() && hasPermission('products', 'update');
+      }
+    }
+    
+    // Orders Collection
+    match /orders/{orderId} {
+      allow read: if isSignedIn();
+      allow update: if isAdmin() && hasPermission('orders', 'update');
+      allow delete: if isSuperAdmin();
+      
+      // Return requests subcollection
+      match /returns/{returnId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+    }
+    
+    // Customers Collection
+    match /customers/{customerId} {
+      allow read: if isSignedIn() && (request.auth.uid == customerId || isAdmin());
+      allow write: if isAdmin() && hasPermission('customers', 'update');
+    }
+    
+    // Inventory Collection
+    match /inventory/{itemId} {
+      allow read: if isSignedIn();
+      allow update: if isAdmin() && hasPermission('inventory', 'update');
+      
+      // Audit logs subcollection
+      match /auditLogs/{logId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin();
+      }
+    }
+    
+    // Inventory Audit Logs
+    match /inventoryAuditLogs/{logId} {
+      allow read: if isAdmin() && hasPermission('inventory', 'read');
+      allow write: if isAdmin() && hasPermission('inventory', 'update');
+    }
+    
+    // Activity Logs Collection
+    match /activityLogs/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Analytics Collection
+    match /analytics/{analyticsId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() && hasPermission('analytics', 'update');
+    }
+    
+    // Reports Collection
+    match /reports/{reportId} {
+      allow read: if isAdmin() && hasPermission('reports', 'read');
+      allow write: if isAdmin() && hasPermission('reports', 'create');
+    }
+    
+    // Categories Collection
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin() && hasPermission('products', 'update');
+    }
+    
+    // Coupons/Discounts Collection
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin() && hasPermission('products', 'update');
+    }
+    
+    // Notifications Collection
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}
