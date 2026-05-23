@@ -4,17 +4,28 @@
 
 import type { AdminProduct, AdminOrder, OrderStatus } from '../types';
 
-// Format currency
-export function formatCurrency(amount: number, currency = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-  }).format(amount);
+import { formatInr } from '../../lib/formatCurrency';
+
+/** Format amounts in Indian Rupees (₹). */
+export function formatCurrency(amount: number): string {
+  return formatInr(amount);
 }
 
-// Format date
-export function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+/** Firestore Timestamp | Date | string → Date */
+export function coerceDate(value: unknown): Date {
+  if (!value) return new Date(0);
+  if (value instanceof Date) return value;
+  if (typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return new Date(String(value));
+}
+
+/** Format calendar date (handles Firestore Timestamp via `coerceDate`). */
+export function formatDate(date: unknown): string {
+  if (date == null || date === '') return '—';
+  const d = coerceDate(date);
+  if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -22,9 +33,11 @@ export function formatDate(date: Date | string): string {
   });
 }
 
-// Format date with time
-export function formatDateTime(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+/** Format date and time (handles Firestore Timestamp via `coerceDate`). */
+export function formatDateTime(date: unknown): string {
+  if (date == null || date === '') return '—';
+  const d = coerceDate(date);
+  if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -183,7 +196,7 @@ export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
+  let timeout: ReturnType<typeof setTimeout>;
   return function executedFunction(...args: Parameters<T>) {
     const later = () => {
       clearTimeout(timeout);

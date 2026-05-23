@@ -4,15 +4,19 @@ import { Heart, Star } from 'lucide-react';
 import type { Product } from '../../types';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import { formatInr } from '../../lib/formatCurrency';
+import { getProductListingImage } from '../../lib/productMedia';
+import { formatRatingOneDecimal, getProductListingStarRating } from '../../lib/productReviewStats';
 
 export function ProductCard({ product }: { product: Product }) {
   const { user, toggleWishlist } = useAuth();
-  const isWishlisted = user?.wishlist.includes(product.id) ?? false;
+  const isWishlisted = user?.wishlist?.includes(product.id) ?? false;
+  const listRating = getProductListingStarRating(product);
 
   return (
     <motion.article whileHover={{ y: -6 }} className="group overflow-hidden rounded-[28px] border border-white/10 bg-slate-950/80 p-5 transition hover:border-violet-400/30">
       <div className="relative overflow-hidden rounded-3xl bg-slate-900/80">
-        <img src={product.images[0]} alt={product.name} className="h-72 w-full object-cover transition duration-500 group-hover:scale-105" />
+        <img src={getProductListingImage(product)} alt={product.name} className="h-72 w-full object-cover transition duration-500 group-hover:scale-105" />
         <button
           type="button"
           onClick={() => toggleWishlist(product.id)}
@@ -31,11 +35,13 @@ export function ProductCard({ product }: { product: Product }) {
         </Badge>
       </div>
       <div className="mt-5 flex items-center justify-between text-sm text-slate-300">
-        <div className="flex items-center gap-1">
-          <Star className="h-4 w-4 text-amber-400" />
-          <span>{product.rating.toFixed(1)}</span>
-        </div>
-        <div className="font-semibold text-white">${product.price}</div>
+        {listRating > 0 ? (
+          <div className="flex items-center gap-1">
+            <Star className="h-4 w-4 text-amber-400" />
+            <span>{formatRatingOneDecimal(listRating)}</span>
+          </div>
+        ) : null}
+        <div className="font-semibold text-white">{formatInr(product.price)}</div>
       </div>
       <Link
         to={`/product/${product.slug}`}

@@ -10,13 +10,22 @@ import { useAuth } from './context/AuthContext';
 function App() {
   const location = useLocation();
   const { loading } = useAuth();
+  const isAdminShell = location.pathname.startsWith('/admin');
 
-  if (loading) {
+  if (loading && !isAdminShell) {
     return <LoadingScreen />;
   }
 
+  if (isAdminShell) {
+    return (
+      <div className="scheme-light min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <Router />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    <div className="scheme-dark min-h-screen bg-slate-950 text-slate-100 antialiased">
       <Navbar />
       <AnimatePresence mode="wait">
         <motion.main

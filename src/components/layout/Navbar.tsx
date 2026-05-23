@@ -1,13 +1,17 @@
 import { Link, NavLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingBag, Heart, Menu, User } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthModal } from '../../context/AuthModalContext';
 import { useAuth } from '../../context/AuthContext';
+import { useCartStore } from '../../store/cartStore';
 
 export function Navbar() {
   const { openModal } = useAuthModal();
   const { user, signOut } = useAuth();
+  const cartItems = useCartStore(s => s.items);
+  const cartCount = useMemo(() => cartItems.reduce((sum, i) => sum + i.quantity, 0), [cartItems]);
+  const wishlistCount = user?.wishlist?.length ?? 0;
   const [menuOpen, setMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,10 +40,10 @@ export function Navbar() {
           Graphtics
         </Link>
         <nav className="hidden items-center gap-8 md:flex">
-          {['Shop', 'Anime', 'Streetwear', 'Drops'].map(label => (
+          {['Shop', 'Contact', 'Anime', 'Streetwear', 'Drops'].map(label => (
             <NavLink
               key={label}
-              to={label === 'Shop' ? '/shop' : `/category/${label.toLowerCase()}`}
+              to={label === 'Shop' ? '/shop' : label === 'Contact' ? '/contact' : `/category/${label.toLowerCase()}`}
               className={({ isActive }) =>
                 `text-sm font-medium transition ${isActive ? 'text-white' : 'text-slate-400 hover:text-white'}`
               }
@@ -127,15 +131,27 @@ export function Navbar() {
 
           <Link
             to="/wishlist"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-slate-200 transition hover:bg-slate-900 hover:text-white"
+            className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-slate-200 transition hover:bg-slate-900 hover:text-white"
+            aria-label={wishlistCount ? `Wishlist, ${wishlistCount} items` : 'Wishlist'}
           >
             <Heart className="h-5 w-5" />
+            {wishlistCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-pink-500 px-1 text-[10px] font-semibold text-white">
+                {wishlistCount > 99 ? '99+' : wishlistCount}
+              </span>
+            ) : null}
           </Link>
           <Link
             to="/cart"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-slate-200 transition hover:bg-slate-900 hover:text-white"
+            className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-slate-200 transition hover:bg-slate-900 hover:text-white"
+            aria-label={cartCount ? `Cart, ${cartCount} items` : 'Shopping cart'}
           >
             <ShoppingBag className="h-5 w-5" />
+            {cartCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-500 px-1 text-[10px] font-semibold text-white">
+                {cartCount > 99 ? '99+' : cartCount}
+              </span>
+            ) : null}
           </Link>
           <button className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-slate-200 md:hidden">
             <Menu className="h-5 w-5" />

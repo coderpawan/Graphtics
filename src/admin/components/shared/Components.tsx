@@ -63,17 +63,13 @@ interface FormInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: string;
 }
 
-export function FormInput({ label, error, ...props }: FormInputProps) {
+export function FormInput({ label, error, className = '', ...props }: FormInputProps) {
   return (
     <div className="mb-4">
       {label && <label className="block text-sm font-medium text-slate-700 mb-2">{label}</label>}
       <input
         {...props}
-        className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
-          error
-            ? 'border-red-300 focus:ring-red-500'
-            : 'border-slate-300 focus:ring-violet-500'
-        }`}
+        className={`admin-control transition-colors ${error ? 'border-red-300 focus:ring-red-500' : ''} ${className}`.trim()}
       />
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
@@ -86,17 +82,13 @@ interface FormTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaEle
   error?: string;
 }
 
-export function FormTextarea({ label, error, ...props }: FormTextareaProps) {
+export function FormTextarea({ label, error, className = '', ...props }: FormTextareaProps) {
   return (
     <div className="mb-4">
       {label && <label className="block text-sm font-medium text-slate-700 mb-2">{label}</label>}
       <textarea
         {...props}
-        className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors resize-none ${
-          error
-            ? 'border-red-300 focus:ring-red-500'
-            : 'border-slate-300 focus:ring-violet-500'
-        }`}
+        className={`admin-control resize-none transition-colors ${error ? 'border-red-300 focus:ring-red-500' : ''} ${className}`.trim()}
       />
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
@@ -110,17 +102,13 @@ interface FormSelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> 
   options: { value: string; label: string }[];
 }
 
-export function FormSelect({ label, error, options, ...props }: FormSelectProps) {
+export function FormSelect({ label, error, options, className = '', ...props }: FormSelectProps) {
   return (
     <div className="mb-4">
       {label && <label className="block text-sm font-medium text-slate-700 mb-2">{label}</label>}
       <select
         {...props}
-        className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors ${
-          error
-            ? 'border-red-300 focus:ring-red-500'
-            : 'border-slate-300 focus:ring-violet-500'
-        }`}
+        className={`admin-control transition-colors ${error ? 'border-red-300 focus:ring-red-500' : ''} ${className}`.trim()}
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -260,3 +248,5 @@ export function Badge({ text, variant = 'default' }: BadgeProps) {
     </span>
   );
 }
+
+export { DataTable } from './DataTable';

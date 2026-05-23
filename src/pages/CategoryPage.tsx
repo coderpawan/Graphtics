@@ -1,14 +1,21 @@
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { productCatalog } from '../data/products';
+import { useCatalogProducts } from '../hooks/useCatalogProducts';
 import { ProductGrid } from '../components/product/ProductGrid';
 import { Badge } from '../components/ui/Badge';
 
 export default function CategoryPage() {
   const { category } = useParams();
+  const { data: products = [], isLoading, isPlaceholderData } = useCatalogProducts();
+
   const filtered = useMemo(
-    () => productCatalog.filter(product => product.category.toLowerCase() === category?.toLowerCase() || product.tags.some(tag => tag.toLowerCase() === category?.toLowerCase())),
-    [category],
+    () =>
+      products.filter(
+        product =>
+          product.category.toLowerCase() === category?.toLowerCase() ||
+          (product.tags ?? []).some(tag => tag.toLowerCase() === category?.toLowerCase()),
+      ),
+    [category, products],
   );
 
   return (
@@ -24,7 +31,13 @@ export default function CategoryPage() {
           <Badge>Stocked</Badge>
           <Badge>Curated</Badge>
         </div>
-        <ProductGrid products={filtered} />
+        {isLoading && !isPlaceholderData && filtered.length === 0 ? (
+          <p className="text-center text-slate-400">Loading collection…</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-slate-400">No products match this collection yet.</p>
+        ) : (
+          <ProductGrid products={filtered} />
+        )}
       </div>
     </div>
   );

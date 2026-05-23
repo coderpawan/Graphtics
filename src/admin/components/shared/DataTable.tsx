@@ -69,13 +69,13 @@ export function DataTable<T extends { id: string }>({
           placeholder={searchPlaceholder}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+          className="admin-control max-w-md px-4 py-2"
         />
 
         {onExport && (
           <button
             onClick={onExport}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-200"
           >
             <Download className="w-4 h-4" />
             Export
@@ -90,7 +90,7 @@ export function DataTable<T extends { id: string }>({
             <tr>
               {columns.map((col) => (
                 <th
-                  key={String(col.key)}
+                  key={`${String(col.key)}-${col.label}`}
                   className={`px-4 py-3 text-left text-sm font-semibold text-slate-700 ${col.width || ''}`}
                 >
                   {col.sortable ? (
@@ -135,7 +135,7 @@ export function DataTable<T extends { id: string }>({
                   className={`border-t border-slate-200 hover:bg-slate-50 transition-colors ${onRowClick ? 'cursor-pointer' : ''}`}
                 >
                   {columns.map((col) => (
-                    <td key={String(col.key)} className="px-4 py-3 text-sm text-slate-900">
+                    <td key={`${String(col.key)}-${col.label}`} className="px-4 py-3 text-sm text-slate-900">
                       {col.render ? col.render(row[col.key], row) : String(row[col.key])}
                     </td>
                   ))}

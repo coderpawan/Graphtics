@@ -5,14 +5,16 @@
 import { useState } from 'react';
 import { Eye, Ban } from 'lucide-react';
 import { AdminLayout } from '../../components/layout/AdminLayout';
-import { DataTable, Button, Badge } from '../../components/shared/Components';
+import { AdminErrorBoundary } from '../../components/AdminErrorBoundary';
+import { DataTable, Badge } from '../../components/shared/Components';
 import { useAdminCustomers } from '../../hooks/useAdmin';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 import { useNavigate } from 'react-router-dom';
+import type { AdminCustomer } from '../../types';
 
 export default function AdminCustomers() {
   const navigate = useNavigate();
-  const { customers, loading } = useAdminCustomers();
+  const { customers, loading, error } = useAdminCustomers();
   const [filters, setFilters] = useState({
     status: 'active',
   });
@@ -31,12 +33,17 @@ export default function AdminCustomers() {
     {
       key: 'firstName' as const,
       label: 'Name',
-      render: (_, customer: any) =>
+      render: (_value: unknown, customer: AdminCustomer) =>
         `${customer.firstName || ''} ${customer.lastName || ''}`.trim(),
     },
     {
       key: 'phone' as const,
       label: 'Phone',
+    },
+    {
+      key: 'phoneAlt' as const,
+      label: 'Alt phone',
+      render: (_: unknown, customer: AdminCustomer) => customer.phoneAlt || '—',
     },
     {
       key: 'totalOrders' as const,
@@ -72,7 +79,7 @@ export default function AdminCustomers() {
     {
       key: 'id' as const,
       label: 'Actions',
-      render: (_, customer) => (
+      render: (_value: unknown, customer: AdminCustomer) => (
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate(`/admin/customers/${customer.id}`)}
@@ -92,12 +99,17 @@ export default function AdminCustomers() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <AdminErrorBoundary>
+        <div className="space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Customers</h1>
           <p className="text-slate-600 mt-1">Manage customer profiles and interactions</p>
         </div>
+
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        )}
 
         {/* Status Filter */}
         <div className="flex items-center gap-2">
@@ -122,7 +134,7 @@ export default function AdminCustomers() {
         </div>
 
         {/* Customers Table */}
-        <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <div className="rounded-lg border border-slate-200 bg-white p-6">
           <DataTable
             columns={columns}
             data={filteredCustomers}
@@ -130,7 +142,8 @@ export default function AdminCustomers() {
             searchPlaceholder="Search by email or name..."
           />
         </div>
-      </div>
+        </div>
+      </AdminErrorBoundary>
     </AdminLayout>
   );
 }

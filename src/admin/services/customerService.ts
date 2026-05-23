@@ -35,7 +35,7 @@ export const customerService = {
       }
 
       constraints.push(orderBy('registeredAt', 'desc'));
-      constraints.push(limit(options.limit || 20));
+      constraints.push(limit(options.limit || 100));
 
       const q = query(collection(db, COLLECTION), ...constraints);
       const snapshot = await getDocs(q);

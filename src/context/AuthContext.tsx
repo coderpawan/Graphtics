@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { auth } from '../firebase/config';
 import {
@@ -29,29 +29,22 @@ const loadStoredUser = (): UserProfile | null => {
 };
 
 /**
- * Detects if an error is due to being offline
+ * True when Firestore / network indicates the client cannot reach the backend right now.
+ * Avoid treating unrelated Firestore codes (e.g. failed-precondition for missing indexes) as "offline".
  */
-const isOfflineError = (error: any): boolean => {
+const isFirestoreUnreachableError = (error: unknown): boolean => {
+  const code = (error as { code?: string })?.code;
+  const message = String((error as Error)?.message ?? '');
   return (
-    error?.code === 'failed-precondition' ||
-    error?.message?.includes('offline') ||
-    error?.message?.includes('client is offline') ||
-    !navigator.onLine
+    code === 'unavailable' ||
+    code === 'deadline-exceeded' ||
+    message.toLowerCase().includes('client is offline') ||
+    message.toLowerCase().includes('failed to get document because the client is offline')
   );
 };
 
-/**
- * Retries a promise with exponential backoff
- * @param fn - Async function to retry
- * @param maxAttempts - Maximum number of attempts (default: 3)
- * @param baseDelay - Base delay in ms (default: 1000)
- */
-const retryWithBackoff = async <T,>(
-  fn: () => Promise<T>,
-  maxAttempts: number = 3,
-  baseDelay: number = 1000
-): Promise<T> => {
-  let lastError: any;
+const retryWithBackoff = async <T,>(fn: () => Promise<T>, maxAttempts = 3, baseDelay = 800): Promise<T> => {
+  let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
@@ -66,11 +59,48 @@ const retryWithBackoff = async <T,>(
   throw lastError;
 };
 
+const defaultProfileFromAuth = (firebaseUser: FirebaseUser): UserProfile => ({
+  uid: firebaseUser.uid,
+  name: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Guest',
+  email: firebaseUser.email ?? '',
+  phone: firebaseUser.phoneNumber ?? '',
+  phoneAlt: '',
+  avatarUrl: '',
+  gender: 'other',
+  dob: '',
+  createdAt: new Date().toISOString(),
+  membershipStatus: 'bronze',
+  role: 'customer',
+  wishlist: [],
+  recentlyViewed: [],
+  savedAddresses: [],
+  preferences: {
+    savedSizes: [],
+    preferredFit: 'regular',
+    preferredBrands: [],
+    preferredColors: [],
+    preferredStyles: [],
+    favouriteCategories: [],
+  },
+  notifications: {
+    pushNotifications: true,
+    orderAlerts: true,
+    marketing: false,
+  },
+  communicationPreferences: {
+    emailUpdates: true,
+    smsUpdates: false,
+    offers: true,
+    restockAlerts: true,
+  },
+  loginHistory: [],
+});
+
 type AuthContextValue = {
   user: UserProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string, phone: string, phoneAlt?: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -91,19 +121,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(loadStoredUser());
   const [loading, setLoading] = useState(true);
   const toast = useToast();
+  const uidRef = useRef<string | null>(null);
 
-  /**
-   * Stores a profile to sync later when online
-   */
   const storePendingSync = (profile: UserProfile) => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(PENDING_PROFILE_KEY, JSON.stringify(profile));
     }
   };
 
-  /**
-   * Retrieves pending profile sync
-   */
   const getPendingSync = (): UserProfile | null => {
     if (typeof window === 'undefined') return null;
     try {
@@ -114,188 +139,107 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  /**
-   * Clears pending sync
-   */
   const clearPendingSync = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(PENDING_PROFILE_KEY);
     }
   };
 
-  const initializeProfile = async (firebaseUser: FirebaseUser) => {
+  /** Loads / creates Firestore profile and updates React state (call after UI is already unblocked). */
+  const syncProfileWithServer = async (firebaseUser: FirebaseUser) => {
     try {
-      // Try to fetch existing profile with retry logic
-      const existing = await retryWithBackoff(
-        () => getUserProfile(firebaseUser.uid),
-        3,
-        1000
-      );
+      const existing = await retryWithBackoff(() => getUserProfile(firebaseUser.uid), 3, 600);
 
-      const profile: UserProfile = existing ?? {
-        uid: firebaseUser.uid,
-        name: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Guest',
-        email: firebaseUser.email ?? '',
-        phone: firebaseUser.phoneNumber ?? '',
-        avatarUrl: '',
-        gender: 'other',
-        dob: '',
-        createdAt: new Date().toISOString(),
-        membershipStatus: 'bronze',
-        role: 'customer',
-        wishlist: [],
-        recentlyViewed: [],
-        savedAddresses: [],
-        preferences: {
-          savedSizes: [],
-          preferredFit: 'regular',
-          preferredBrands: [],
-          preferredColors: [],
-          preferredStyles: [],
-          favouriteCategories: [],
-        },
-        notifications: {
-          pushNotifications: true,
-          orderAlerts: true,
-          marketing: false,
-        },
-        communicationPreferences: {
-          emailUpdates: true,
-          smsUpdates: false,
-          offers: true,
-          restockAlerts: true,
-        },
-        loginHistory: [],
-      };
+      const profile: UserProfile = existing
+        ? {
+            ...defaultProfileFromAuth(firebaseUser),
+            ...existing,
+            wishlist: existing.wishlist ?? [],
+            recentlyViewed: existing.recentlyViewed ?? [],
+          }
+        : {
+            ...defaultProfileFromAuth(firebaseUser),
+            createdAt: new Date().toISOString(),
+          };
 
-      // Sync profile with retry logic
-      await retryWithBackoff(
-        () => syncUserProfile(profile),
-        3,
-        1000
-      );
+      if (!existing) {
+        await retryWithBackoff(() => syncUserProfile(profile), 2, 500);
+      }
 
-      setUser(profile);
+      if (uidRef.current !== firebaseUser.uid) return;
+
+      setUser({ ...profile, isOffline: false });
       clearPendingSync();
     } catch (error) {
-      // Handle offline error gracefully
-      if (isOfflineError(error)) {
-        const partialProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName ?? firebaseUser.email?.split('@')[0] ?? 'Guest',
-          email: firebaseUser.email ?? '',
-          phone: firebaseUser.phoneNumber ?? '',
-          avatarUrl: '',
-          gender: 'other',
-          dob: '',
-          membershipStatus: 'bronze',
-          role: 'customer',
-          wishlist: [],
-          recentlyViewed: [],
-          savedAddresses: [],
-          preferences: {
-            savedSizes: [],
-            preferredFit: 'regular',
-            preferredBrands: [],
-            preferredColors: [],
-            preferredStyles: [],
-            favouriteCategories: [],
-          },
-          notifications: {
-            pushNotifications: true,
-            orderAlerts: true,
-            marketing: false,
-          },
-          communicationPreferences: {
-            emailUpdates: true,
-            smsUpdates: false,
-            offers: true,
-            restockAlerts: true,
-          },
-          loginHistory: [],
-          isOffline: true,
-        };
+      if (uidRef.current !== firebaseUser.uid) return;
 
-        setUser(partialProfile);
-        storePendingSync(partialProfile);
-        toast.showToast('Working offline - profile data will sync when connected', 'info');
-      } else {
-        console.error('Profile initialization error:', error);
-        toast.showToast('Unable to load profile. Please try again.', 'error');
-        throw error;
+      if (isFirestoreUnreachableError(error) || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+        const cached = loadStoredUser();
+        const fallback =
+          cached?.uid === firebaseUser.uid ? { ...cached, isOffline: true } : { ...defaultProfileFromAuth(firebaseUser), isOffline: true };
+        setUser(fallback);
+        storePendingSync(fallback);
+        return;
       }
+
+      console.error('Profile sync error:', error);
+      toast.showToast('Unable to refresh profile from the server.', 'error');
     }
   };
 
-  /**
-   * Syncs pending profile when connection is restored
-   */
   const syncPendingProfile = async () => {
     const pendingProfile = getPendingSync();
-    if (pendingProfile && navigator.onLine) {
-      try {
-        await retryWithBackoff(
-          () => syncUserProfile(pendingProfile),
-          3,
-          1000
-        );
-
-        const refreshedProfile = await retryWithBackoff(
-          () => getUserProfile(pendingProfile.uid),
-          3,
-          1000
-        );
-
-        if (refreshedProfile) {
-          setUser({ ...refreshedProfile, isOffline: false });
-          clearPendingSync();
-          toast.showToast('Profile synced successfully', 'success');
-        }
-      } catch (error) {
-        console.error('Failed to sync pending profile:', error);
+    if (!pendingProfile || !navigator.onLine) return;
+    try {
+      await retryWithBackoff(() => syncUserProfile(pendingProfile), 3, 1000);
+      const refreshedProfile = await retryWithBackoff(() => getUserProfile(pendingProfile.uid), 3, 1000);
+      if (refreshedProfile && uidRef.current === pendingProfile.uid) {
+        setUser({ ...refreshedProfile, isOffline: false });
+        clearPendingSync();
       }
+    } catch (error) {
+      console.error('Failed to sync pending profile:', error);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async currentUser => {
-      setLoading(true);
-      if (currentUser) {
-        await initializeProfile(currentUser);
-      } else {
+    const unsubscribe = onAuthStateChanged(auth, currentUser => {
+      if (!currentUser) {
+        uidRef.current = null;
         setUser(null);
+        setLoading(false);
+        return;
       }
+
+      uidRef.current = currentUser.uid;
+
+      const cached = loadStoredUser();
+      if (cached?.uid === currentUser.uid) {
+        setUser(cached);
+      } else {
+        setUser(defaultProfileFromAuth(currentUser));
+      }
+
       setLoading(false);
+
+      void syncProfileWithServer(currentUser);
     });
 
     return () => unsubscribe();
   }, []);
 
-  /**
-   * Listen to online/offline events and sync pending profile
-   */
   useEffect(() => {
     const handleOnline = () => {
-      toast.showToast('Connection restored', 'info');
-      syncPendingProfile();
-    };
-
-    const handleOffline = () => {
-      toast.showToast('You are offline', 'warning');
+      void syncPendingProfile();
     };
 
     window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
 
     return () => {
       window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  /**
-   * Sync user to localStorage whenever it changes
-   */
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (user) {
@@ -310,7 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const credential = await loginWithEmail(email, password);
       const firebaseUser = credential.user;
       if (firebaseUser) {
-        await initializeProfile(firebaseUser);
+        await syncProfileWithServer(firebaseUser);
       }
       toast.showToast('Signed in successfully', 'success');
     } catch (error) {
@@ -319,43 +263,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (name: string, email: string, password: string) => {
+  const signUp = async (name: string, email: string, password: string, phone: string, phoneAlt?: string) => {
     try {
       const userCredential = await registerWithEmail(email, password);
       const profile: UserProfile = {
-        uid: userCredential.user.uid,
+        ...defaultProfileFromAuth(userCredential.user),
         name,
         email,
-        phone: '',
-        avatarUrl: '',
-        gender: 'other',
-        dob: '',
+        phone: phone.trim(),
+        phoneAlt: phoneAlt?.trim() || '',
         createdAt: new Date().toISOString(),
-        membershipStatus: 'bronze',
-        role: 'customer',
-        wishlist: [],
-        recentlyViewed: [],
-        savedAddresses: [],
-        preferences: {
-          savedSizes: [],
-          preferredFit: 'regular',
-          preferredBrands: [],
-          preferredColors: [],
-          preferredStyles: [],
-          favouriteCategories: [],
-        },
-        notifications: {
-          pushNotifications: true,
-          orderAlerts: true,
-          marketing: false,
-        },
-        communicationPreferences: {
-          emailUpdates: true,
-          smsUpdates: false,
-          offers: true,
-          restockAlerts: true,
-        },
-        loginHistory: [],
       };
       await syncUserProfile(profile);
       setUser(profile);
@@ -369,6 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     await firebaseLogout();
     setUser(null);
+    clearPendingSync();
     toast.showToast('Signed out successfully', 'info');
   };
 
@@ -377,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const credential = await loginWithGoogle();
       const firebaseUser = credential.user;
       if (firebaseUser) {
-        await initializeProfile(firebaseUser);
+        await syncProfileWithServer(firebaseUser);
       }
       toast.showToast('Signed in with Google', 'success');
     } catch (error) {
@@ -461,12 +379,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const isAdding = !user.wishlist.includes(productId);
-    await updateUserWishlist(user.uid, productId, isAdding);
+    const currentWishlist = user.wishlist ?? [];
+    const isAdding = !currentWishlist.includes(productId);
+    try {
+      await updateUserWishlist(user.uid, productId, isAdding);
+    } catch (error) {
+      console.error('Wishlist update failed:', error);
+      toast.showToast('Could not update your wishlist. Check your connection and try again.', 'error');
+      return;
+    }
 
     const updatedProfile = {
       ...user,
-      wishlist: isAdding ? [...user.wishlist, productId] : user.wishlist.filter(id => id !== productId),
+      wishlist: isAdding ? [...currentWishlist, productId] : currentWishlist.filter(id => id !== productId),
     };
 
     setUser(updatedProfile);

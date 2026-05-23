@@ -1,80 +1,64 @@
 /**
- * Admin Context - Manages admin authentication and state
+ * Admin Context — session-based admin access (no Firestore gate on load).
+ * Optional Firebase sign-out on logout keeps store session separate.
  */
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { auth, db } from '../../firebase/config';
-import { doc, getDoc } from 'firebase/firestore';
+import { createContext, useContext, useCallback, useState, type ReactNode } from 'react';
+import { auth } from '../../firebase/config';
 import type { AdminUser } from '../types';
-import { useToast } from '../../components/ui/Toast';
+import {
+  clearAdminSession,
+  createLocalSuperAdmin,
+  credentialsMatch,
+  isAdminSessionStored,
+  persistAdminSession,
+} from '../auth/localAdminSession';
 
 interface AdminContextType {
   adminUser: AdminUser | null;
   loading: boolean;
   isAdmin: boolean;
   hasPermission: (resource: string, action: string) => boolean;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
+function initialAdminUser(): AdminUser | null {
+  return isAdminSessionStored() ? createLocalSuperAdmin() : null;
+}
+
 export function AdminProvider({ children }: { children: ReactNode }) {
-  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { error } = useToast();
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(initialAdminUser);
+  /** Reserved for future async admin bootstrap; keep false so routes render immediately */
+  const [loading] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      try {
-        if (firebaseUser) {
-          // Fetch admin user data from Firestore
-          const adminDocRef = doc(db, 'admins', firebaseUser.uid);
-          const adminDocSnap = await getDoc(adminDocRef);
+  const login = useCallback(async (username: string, password: string) => {
+    if (!credentialsMatch(username, password)) {
+      throw new Error('Invalid credentials');
+    }
+    persistAdminSession();
+    setAdminUser(createLocalSuperAdmin());
+  }, []);
 
-          if (adminDocSnap.exists()) {
-            const adminData = adminDocSnap.data() as AdminUser;
-            setAdminUser(adminData);
-          } else {
-            // User is authenticated but not an admin
-            setAdminUser(null);
-          }
-        } else {
-          setAdminUser(null);
-        }
-      } catch (err) {
-        console.error('Error loading admin user:', err);
-        error('Failed to load admin profile');
-        setAdminUser(null);
-      } finally {
-        setLoading(false);
-      }
-    });
+  const logout = useCallback(async () => {
+    clearAdminSession();
+    setAdminUser(null);
+    try {
+      await auth.signOut();
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-    return unsubscribe;
-  }, [error]);
-
-  const hasPermission = (resource: string, action: string): boolean => {
+  const hasPermission = useCallback((resource: string, action: string): boolean => {
     if (!adminUser) return false;
-
-    // Super admin has all permissions
     if (adminUser.role === 'super-admin') return true;
-
-    // Check specific permissions
     return adminUser.permissions.some(
       (p) => p.resource === resource && p.action === action
     );
-  };
-
-  const logout = async () => {
-    try {
-      await auth.signOut();
-      setAdminUser(null);
-    } catch (err) {
-      console.error('Logout error:', err);
-      throw err;
-    }
-  };
+  }, [adminUser]);
 
   return (
     <AdminContext.Provider
@@ -83,6 +67,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         loading,
         isAdmin: !!adminUser,
         hasPermission,
+        login,
         logout,
       }}
     >

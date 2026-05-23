@@ -3,7 +3,7 @@
  */
 
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
@@ -16,7 +16,6 @@ import {
   Boxes,
   DollarSign,
   FileText,
-  Bell,
 } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
 import { useAdminAuth } from '../../context/AdminContext';
@@ -60,8 +59,9 @@ const navItems: NavItem[] = [
     href: '/admin/inventory',
     icon: Boxes,
     children: [
-      { label: 'Stock Management', href: '/admin/inventory', icon: Boxes },
-      { label: 'Low Stock Alerts', href: '/admin/inventory/alerts', icon: Boxes },
+      { label: 'Stock matrix', href: '/admin/inventory', icon: Boxes },
+      { label: 'Low stock alerts', href: '/admin/inventory/alerts', icon: Boxes },
+      { label: 'Stock ledger', href: '/admin/inventory/ledger', icon: Boxes },
     ],
   },
   {
@@ -71,6 +71,14 @@ const navItems: NavItem[] = [
     children: [
       { label: 'All Customers', href: '/admin/customers', icon: Users },
       { label: 'VIP Customers', href: '/admin/customers/vip', icon: Users },
+    ],
+  },
+  {
+    label: 'Support',
+    href: '/admin/support/complaints',
+    icon: FileText,
+    children: [
+      { label: 'Complaints & redressal', href: '/admin/support/complaints', icon: FileText },
     ],
   },
   {
@@ -96,6 +104,7 @@ const navItems: NavItem[] = [
 
 export function AdminSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { sidebarOpen, setSidebarOpen } = useAdminStore();
   const { logout } = useAdminAuth();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -121,6 +130,7 @@ export function AdminSidebar() {
   const handleLogout = async () => {
     try {
       await logout();
+      navigate('/admin/login', { replace: true });
     } catch (error) {
       console.error('Logout error:', error);
     }

@@ -3,11 +3,13 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Menu, Bell, Search, User, Settings, LogOut } from 'lucide-react';
 import { useAdminStore } from '../../store/adminStore';
 import { useAdminAuth } from '../../context/AdminContext';
 
 export function AdminHeader() {
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { setSidebarOpen } = useAdminStore();
@@ -16,6 +18,7 @@ export function AdminHeader() {
   const handleLogout = async () => {
     try {
       await logout();
+      navigate('/admin/login', { replace: true });
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -76,17 +79,28 @@ export function AdminHeader() {
                   <p className="text-xs text-slate-500">{adminUser?.role}</p>
                 </div>
 
-                <button className="w-full flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors">
+                <button
+                  type="button"
+                  className="w-full flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                >
                   <User className="w-4 h-4 mr-3" />
                   Profile
                 </button>
 
-                <button className="w-full flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate('/admin/settings');
+                    setShowUserMenu(false);
+                  }}
+                  className="w-full flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition-colors"
+                >
                   <Settings className="w-4 h-4 mr-3" />
                   Settings
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     handleLogout();
                     setShowUserMenu(false);

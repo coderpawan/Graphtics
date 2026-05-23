@@ -315,7 +315,7 @@ Display key metrics with icons and trends
 ```tsx
 <StatCard
   label="Total Revenue"
-  value="$42,500"
+  value="₹42,500"
   icon={DollarSign}
   trend="up"
   change="12% from last month"
@@ -373,7 +373,7 @@ Customizable button component
 import { formatCurrency, formatDate, calculateProfitMargin, validateProduct, exportToCSV } from '@/admin/utils/helpers';
 
 // Format currency
-formatCurrency(1000); // "$1,000.00"
+formatCurrency(1000); // "₹1,000" (INR, en-IN)
 
 // Format date
 formatDate(new Date()); // "Jan 15, 2024"

@@ -11,5 +11,7 @@ export {
   useAdminCustomer,
   useAdminInventory,
   useSalesAnalytics,
+  useDashboardSnapshot,
+  usePendingOrdersListener,
   useDebouncedSearch,
 } from './useAdmin';

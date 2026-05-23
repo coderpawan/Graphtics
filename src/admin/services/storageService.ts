@@ -5,12 +5,74 @@
 import {
   ref,
   uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
 import { storage } from '../../firebase/config';
 
 export const storageService = {
+  /**
+   * Upload to `products/{productId}/...` with progress callbacks (0–100).
+   */
+  async uploadProductImageWithProgress(
+    productId: string,
+    file: File,
+    onProgress?: (pct: number) => void,
+    variantId?: string
+  ): Promise<string> {
+    const compressedFile = (await this.compressImage(file)) as File | Blob;
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${file.name.replace(/[^\w.-]+/g, '_')}`;
+    const path = variantId
+      ? `products/${productId}/variants/${variantId}/${filename}`
+      : `products/${productId}/images/${filename}`;
+
+    const fileRef = ref(storage, path);
+    const task = uploadBytesResumable(fileRef, compressedFile);
+
+    return new Promise((resolve, reject) => {
+      task.on(
+        'state_changed',
+        (snap) => {
+          const pct = snap.totalBytes ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+          onProgress?.(pct);
+        },
+        (err) => reject(err),
+        async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          onProgress?.(100);
+          resolve(url);
+        }
+      );
+    });
+  },
+
+  /**
+   * Review photos shown on the storefront (admin-curated only).
+   */
+  async uploadProductReviewPhoto(productId: string, file: File): Promise<string> {
+    const compressedFile = await this.compressImage(file);
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${file.name.replace(/[^\w.-]+/g, '_')}`;
+    const path = `products/${productId}/review-photos/${filename}`;
+    const fileRef = ref(storage, path);
+    await uploadBytes(fileRef, compressedFile);
+    return getDownloadURL(fileRef);
+  },
+
+  async uploadOrderPackagePhoto(orderDocId: string, file: File): Promise<string> {
+    const v = this.validateFile(file);
+    if (!v.valid) throw new Error(v.error ?? 'Invalid file');
+    const compressedFile = await this.compressImage(file);
+    const timestamp = Date.now();
+    const filename = `${timestamp}-${file.name.replace(/[^\w.-]+/g, '_')}`;
+    const path = `orders/${orderDocId}/package-tracking/${filename}`;
+    const fileRef = ref(storage, path);
+    await uploadBytes(fileRef, compressedFile);
+    return getDownloadURL(fileRef);
+  },
+
   // Upload product image
   async uploadProductImage(
     productId: string,
@@ -91,18 +153,14 @@ export const storageService = {
     }
   },
 
-  // Delete product image
+  /**
+   * Deletes a file from Firebase Storage when `url` is a download URL from this bucket.
+   * No-op when the URL cannot be parsed (e.g. external CDN). Throws on permission/network errors.
+   */
   async deleteProductImage(url: string): Promise<void> {
-    try {
-      // Extract path from URL
-      const path = this.extractPathFromURL(url);
-      if (path) {
-        await this.deleteFile(path);
-      }
-    } catch (error) {
-      console.error('Error deleting product image:', error);
-      throw error;
-    }
+    const path = this.extractPathFromURL(url);
+    if (!path) return;
+    await this.deleteFile(path);
   },
 
   // Compress image

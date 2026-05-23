@@ -1,4 +1,4 @@
-export const initiateStripePayment = async (amount: number, currency = 'usd') => {
+export const initiateStripePayment = async (amount: number, currency = 'inr') => {
   // In production, call a Firebase Cloud Function or server endpoint.
   const response = await fetch('/.netlify/functions/createStripeSession', {
     method: 'POST',

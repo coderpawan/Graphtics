@@ -2,7 +2,7 @@
  * Admin Protected Route Component
  */
 
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAdminAuth } from '../context/AdminContext';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
@@ -18,35 +18,36 @@ export function AdminProtectedRoute({
   requiredRole,
 }: AdminProtectedRouteProps) {
   const location = useLocation();
-  const { adminUser, loading, isAdmin, hasPermission } = useAdminAuth();
+  const { adminUser, loading, isAdmin } = useAdminAuth();
 
   if (loading) {
-    return <LoadingScreen />;
+    return <LoadingScreen variant="admin" />;
   }
 
-  // Not authenticated
+  // Not authenticated — use admin login, not storefront /auth
   if (!adminUser || !isAdmin) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+    return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
 
-  // Check role-based access
-  if (requiredRole && requiredRole !== 'super-admin') {
-    if (adminUser.role !== 'super-admin' && adminUser.role !== requiredRole) {
+  // Role-based access: super-admin may access any route except explicit super-admin-only is still only super-admin
+  if (requiredRole) {
+    const isSuper = adminUser.role === 'super-admin';
+    const allowed =
+      requiredRole === 'super-admin'
+        ? isSuper
+        : isSuper || adminUser.role === requiredRole;
+    if (!allowed) {
       return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">
-              Access Denied
-            </h1>
-            <p className="text-slate-600 mb-6">
-              You don't have permission to access this page.
-            </p>
-            <a
-              href="/admin/dashboard"
-              className="inline-block px-6 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+            <h1 className="mb-2 text-3xl font-bold text-slate-900">Access denied</h1>
+            <p className="mb-6 text-slate-600">You don&apos;t have permission to access this page.</p>
+            <Link
+              to="/admin/dashboard"
+              className="inline-block rounded-lg bg-violet-600 px-6 py-2 text-white transition-colors hover:bg-violet-700"
             >
-              Back to Dashboard
-            </a>
+              Back to dashboard
+            </Link>
           </div>
         </div>
       );

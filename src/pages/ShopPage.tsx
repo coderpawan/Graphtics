@@ -1,14 +1,12 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getAllProducts } from '../firebase/firestore';
-import type { Product } from '../types';
+import { useCatalogProducts } from '../hooks/useCatalogProducts';
 import { ProductGrid } from '../components/product/ProductGrid';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
 import { useDebounce } from '../hooks/useDebounce';
-
-const categories = ['Anime', 'Retro', 'Streetwear', 'Minimal', 'Techwear'];
+import { getProductListingStarRating } from '../lib/productReviewStats';
+import { formatInr } from '../lib/formatCurrency';
 
 export default function ShopPage() {
   const [search, setSearch] = useState('');
@@ -16,11 +14,15 @@ export default function ShopPage() {
   const [sort, setSort] = useState('Trending');
   const debouncedSearch = useDebounce(search, 240);
 
-  const { data: products = [], isLoading } = useQuery<Product[]>({
-    queryKey: ['products'],
-    queryFn: getAllProducts,
-    staleTime: 1000 * 60,
-  });
+  const { data: products = [], isLoading, isPlaceholderData } = useCatalogProducts();
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach(p => {
+      if (p.category?.trim()) set.add(p.category);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
 
   const filtered = useMemo(() => {
     return products
@@ -33,7 +35,7 @@ export default function ShopPage() {
       .sort((a, b) => {
         if (sort === 'Price: Low to High') return a.price - b.price;
         if (sort === 'Price: High to Low') return b.price - a.price;
-        return b.rating - a.rating;
+        return getProductListingStarRating(b) - getProductListingStarRating(a);
       });
   }, [products, debouncedSearch, selectedCategory, sort]);
 
@@ -73,8 +75,10 @@ export default function ShopPage() {
 
       <section className="grid gap-8 lg:grid-cols-[2.5fr_1fr]">
         <div>
-          {isLoading ? (
-            <Card className="p-10 text-center text-slate-400">Loading products...</Card>
+          {isLoading && !isPlaceholderData && filtered.length === 0 ? (
+            <Card className="p-10 text-center text-slate-400">Loading products…</Card>
+          ) : filtered.length === 0 ? (
+            <Card className="p-10 text-center text-slate-400">No products match your filters.</Card>
           ) : (
             <ProductGrid products={filtered} />
           )}
@@ -86,9 +90,9 @@ export default function ShopPage() {
               <div>
                 <p className="text-sm text-slate-300">Price range</p>
                 <div className="mt-2 flex items-center gap-3 text-sm text-slate-400">
-                  <span>$20</span>
+                  <span>{formatInr(500)}</span>
                   <span className="flex-1 h-0.5 bg-white/10" />
-                  <span>$120</span>
+                  <span>{formatInr(5000)}</span>
                 </div>
               </div>
               <div>

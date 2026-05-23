@@ -12,8 +12,16 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
+const registerPhone = z
+  .string()
+  .min(8, 'Enter a valid phone number')
+  .max(24)
+  .regex(/^[\d+\s().-]+$/, 'Use digits (and optional + / spaces)');
+
 const registerSchema = loginSchema.extend({
   name: z.string().min(2),
+  phone: registerPhone,
+  phoneAlt: z.string().max(24).default(''),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -43,7 +51,7 @@ export default function AuthPage() {
     try {
       if (isRegister) {
         const registerData = data as RegisterValues;
-        await signUp(registerData.name, registerData.email, registerData.password);
+        await signUp(registerData.name, registerData.email, registerData.password, registerData.phone, registerData.phoneAlt);
       } else {
         const loginData = data as LoginValues;
         await signIn(loginData.email, loginData.password);
@@ -75,6 +83,19 @@ export default function AuthPage() {
               <label className="mb-2 block text-sm font-medium text-slate-200">Name</label>
               <Input type="text" placeholder="Your name" {...register('name')} />
               {errors.name && <p className="mt-2 text-sm text-rose-400">{errors.name.message}</p>}
+            </div>
+          )}
+          {isRegister && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-200">Phone (required)</label>
+                <Input type="tel" placeholder="+1 555 0100" {...register('phone')} />
+                {errors.phone && <p className="mt-2 text-sm text-rose-400">{errors.phone.message as string}</p>}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-200">Alternate phone</label>
+                <Input type="tel" placeholder="Optional" {...register('phoneAlt')} />
+              </div>
             </div>
           )}
           <div>

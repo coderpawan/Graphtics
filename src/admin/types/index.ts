@@ -152,6 +152,7 @@ export interface AdminCustomer {
   firstName: string;
   lastName: string;
   phone?: string;
+  phoneAlt?: string;
   avatar?: string;
   status: 'active' | 'inactive' | 'suspended' | 'blocked';
   totalOrders: number;
@@ -277,3 +278,5 @@ export interface DashboardChartData {
   value: number;
   color?: string;
 }
+
+export * from './store';

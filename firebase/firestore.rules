@@ -7,17 +7,145 @@ service cloud.firestore {
     }
     match /products/{productId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true;
+      allow create, delete: if request.auth != null && request.auth.token.admin == true;
+      /** Admin full writes; signed-in users may only touch variant rows + timestamps (checkout / returns). */
+      allow update: if request.auth != null && (
+        request.auth.token.admin == true
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['variants', 'updatedAt'])
+      );
     }
-    match /orders/{orderId} {
+
+    match /products/{productId}/skus/{skuId} {
+      allow read: if true;
+      allow create, delete: if request.auth != null && request.auth.token.admin == true;
+      allow update: if request.auth != null;
+    }
+
+    match /stockLedger/{entryId} {
+      allow read: if true;
       allow create: if request.auth != null;
-      allow read: if request.auth != null && (request.auth.uid == resource.data.userId || request.auth.token.admin == true);
-      allow update: if request.auth != null && request.auth.token.admin == true;
+      allow update, delete: if false;
+    }
+
+    function orderMoneyAndIdentityUnchanged() {
+      let o = request.resource.data;
+      let r = resource.data;
+      return o.userId == r.userId
+        && o.items == r.items
+        && o.total == r.total
+        && o.subtotal == r.subtotal
+        && o.shipping == r.shipping
+        && o.tax == r.tax
+        && o.discount == r.discount
+        && o.placedAt == r.placedAt
+        && o.estimatedDelivery == r.estimatedDelivery
+        && o.shippingAddress == r.shippingAddress
+        && (!('orderId' in r) || o.orderId == r.orderId)
+        && (!('customerEmail' in r) || o.customerEmail == r.customerEmail)
+        && (!('customerName' in r) || o.customerName == r.customerName)
+        && (!('customerPhone' in r) || o.customerPhone == r.customerPhone)
+        && (!('customerPhoneAlt' in r) || o.customerPhoneAlt == r.customerPhoneAlt);
+    }
+
+    function customerOrderPatchKeysCancel() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'cancelledAt', 'cancelReason', 'updatedAt', 'fulfillmentEvents']);
+    }
+
+    function customerOrderPatchKeysReturn() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['returnRequest', 'updatedAt', 'fulfillmentEvents']);
+    }
+
+    function customerCancelValid() {
+      return customerOrderPatchKeysCancel()
+        && request.resource.data.status == 'cancelled'
+        && resource.data.status in ['pending', 'confirmed', 'printed', 'packed']
+        && orderMoneyAndIdentityUnchanged();
+    }
+
+    function customerReturnRequestValid() {
+      return customerOrderPatchKeysReturn()
+        && request.resource.data.status == resource.data.status
+        && resource.data.status in ['shipped', 'delivered']
+        && orderMoneyAndIdentityUnchanged()
+        && request.resource.data.returnRequest is map
+        && request.resource.data.returnRequest.status == 'pending'
+        && request.resource.data.returnRequest.reason is string
+        && request.resource.data.returnRequest.requestedAt is string
+        && request.resource.data.returnRequest.reason.size() >= 8
+        && (
+          !('returnRequest' in resource.data)
+          || resource.data.returnRequest.status == 'rejected'
+          || resource.data.returnRequest.status == 'pending'
+        );
+    }
+
+    match /orders/{orderId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.customerPhone is string
+        && request.resource.data.customerPhone.size() >= 8;
+
+      allow read: if request.auth != null
+        && (resource.data.userId == request.auth.uid || request.auth.token.admin == true);
+
+      allow update: if request.auth != null && (
+        request.auth.token.admin == true
+        || (
+          resource.data.userId == request.auth.uid
+          && (customerCancelValid() || customerReturnRequestValid())
+        )
+      );
     }
     match /reviews/{reviewId} {
       allow read: if true;
-      allow create: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.source == 'customer'
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.productId is string
+        && request.resource.data.orderFirestoreId is string
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.content is string
+        && request.resource.data.content.size() >= 4
+        && (!('images' in request.resource.data)
+            || request.resource.data.images == []
+            || request.resource.data.images.size() == 0)
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderFirestoreId)).data.userId == request.auth.uid
+        && (
+          get(/databases/$(database)/documents/orders/$(request.resource.data.orderFirestoreId)).data.status == 'delivered'
+          || get(/databases/$(database)/documents/orders/$(request.resource.data.orderFirestoreId)).data.shippingStatus == 'delivered'
+        );
+      allow update, delete: if false;
     }
+
+    /** Registered when customers place orders (uid = document id). */
+    match /customers/{customerId} {
+      allow create, update: if request.auth != null && request.auth.uid == customerId;
+      allow read: if true;
+      allow delete: if false;
+    }
+
+    /**
+     * Order complaints & suggestions.
+     * NOTE: `update`/`delete` are open for prototyping so the local admin panel (no Firebase custom claims)
+     * can manage redressal. Lock these down in production (e.g. staff custom claims or Admin SDK).
+     */
+    match /orderComplaints/{complaintId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 8
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 8
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderFirestoreId)).data.userId == request.auth.uid;
+      allow update, delete: if true;
+    }
+
     match /{document=**} {
       allow read: if true;
     }

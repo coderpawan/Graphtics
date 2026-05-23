@@ -18,6 +18,8 @@ export {
   useAdminCustomer,
   useAdminInventory,
   useSalesAnalytics,
+  useDashboardSnapshot,
+  usePendingOrdersListener,
   useDebouncedSearch,
 } from './hooks';
 
@@ -31,6 +33,7 @@ export {
   activityService,
   reportService,
   storageService,
+  metadataService,
 } from './services';
 
 // Export store
@@ -84,5 +87,5 @@ export {
 } from './utils/helpers';
 
 // Export routes
-export { AdminRoutes } from './routes/AdminRoutes';
+export { AdminLayout } from './routes/AdminLayout';
 export { AdminProtectedRoute } from './routes/AdminProtectedRoute';

@@ -18,3 +18,4 @@ export {
   Button,
   Badge,
 } from './shared/Components';
+export { AdminErrorBoundary } from './AdminErrorBoundary';

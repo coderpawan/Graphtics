@@ -5,6 +5,9 @@
 import { collection, query, where, getDocs, addDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import type { FinancialReport } from '../types';
+import { orderService } from './orderService';
+import { coerceDate } from '../utils/helpers';
+import type { StoreOrder } from '../types/store';
 
 const COLLECTION = 'reports';
 
@@ -268,5 +271,44 @@ export const reportService = {
       revenue: day.revenue,
       uniqueCustomers: day.customers.size,
     }));
+  },
+
+  /** CSV export for historical orders (clothing store schema). */
+  async buildOrdersCsvForRange(startDate: Date, endDate: Date): Promise<string> {
+    const orders = await orderService.listOrdersBetweenDates(startDate, endDate);
+    const headers = [
+      'orderId',
+      'customerId',
+      'customerName',
+      'totalAmount',
+      'paymentStatus',
+      'status',
+      'trackingNumber',
+      'createdAt',
+      'itemsJson',
+    ];
+    const esc = (v: string) => {
+      if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+        return `"${v.replace(/"/g, '""')}"`;
+      }
+      return v;
+    };
+    const lines = [
+      headers.join(','),
+      ...orders.map((o: StoreOrder) =>
+        [
+          esc(o.orderId),
+          esc(o.customerId),
+          esc(o.customerName),
+          String(o.totalAmount ?? 0),
+          esc(String(o.paymentStatus ?? '')),
+          esc(String(o.status ?? '')),
+          esc(String(o.trackingNumber ?? '')),
+          esc(coerceDate(o.createdAt).toISOString()),
+          esc(JSON.stringify(o.items ?? [])),
+        ].join(',')
+      ),
+    ];
+    return lines.join('\n');
   },
 };

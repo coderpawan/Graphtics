@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Sparkles } from 'lucide-react';
-import { useEffect } from 'react';
-import { productCatalog } from '../data/products';
+import { useEffect, useMemo } from 'react';
+import { useCatalogProducts } from '../hooks/useCatalogProducts';
 import { ProductGrid } from '../components/product/ProductGrid';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
@@ -15,6 +15,14 @@ const heroHighlights = [
 ];
 
 export default function HomePage() {
+  const { data: products = [], isLoading, isFetching, isPlaceholderData } = useCatalogProducts();
+
+  const featuredProducts = useMemo(() => {
+    const trending = products.filter(p => p.isTrending);
+    const pool = trending.length > 0 ? trending : products;
+    return pool.slice(0, 6);
+  }, [products]);
+
   useEffect(() => {
     document.title = 'Graphtics | Home';
   }, []);
@@ -82,7 +90,16 @@ export default function HomePage() {
             View all
           </Link>
         </div>
-        <ProductGrid products={productCatalog} />
+        {isLoading && !isPlaceholderData && featuredProducts.length === 0 ? (
+          <p className="text-center text-slate-400">Loading featured drops…</p>
+        ) : featuredProducts.length === 0 ? (
+          <p className="text-center text-slate-400">No products in the catalog yet. Add products in Firestore to populate the store.</p>
+        ) : (
+          <ProductGrid products={featuredProducts} />
+        )}
+        {isFetching && !isPlaceholderData ? (
+          <p className="mt-2 text-center text-xs text-slate-500">Refreshing catalog…</p>
+        ) : null}
       </section>
 
       <section className="mt-16 grid gap-8 lg:grid-cols-2">
@@ -102,11 +119,11 @@ export default function HomePage() {
           <p className="mt-4 text-slate-400">Real creator feedback, style insight, and hype from the streetwear community.</p>
           <div className="mt-6 grid gap-4">
             <div className="rounded-3xl bg-slate-950/80 p-4">
-              <p className="font-semibold text-white">"The fit is insane and the visuals are top tier."</p>
+              <p className="font-semibold text-white">&ldquo;The fit is insane and the visuals are top tier.&rdquo;</p>
               <p className="mt-2 text-sm text-slate-400">— Nia, Tokyo</p>
             </div>
             <div className="rounded-3xl bg-slate-950/80 p-4">
-              <p className="font-semibold text-white">"Feels like a premium drop product, not a template."</p>
+              <p className="font-semibold text-white">&ldquo;Feels like a premium drop product, not a template.&rdquo;</p>
               <p className="mt-2 text-sm text-slate-400">— Eli, LA</p>
             </div>
           </div>

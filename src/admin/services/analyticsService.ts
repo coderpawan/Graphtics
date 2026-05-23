@@ -1,246 +1,150 @@
 /**
- * Admin Analytics Service - Firebase operations for analytics
+ * Admin Analytics — aggregates over `orders` / `products` using the clothing store schema.
  */
 
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import type { SalesAnalytics, SalesTrendData } from '../types';
+import type { CategorySales, ProductSales, SalesAnalytics, SalesTrendData } from '../types';
+import type { StoreOrder } from '../types/store';
+import { productService } from './productService';
+import { mapOrderRecordFromFirestore } from './orderService';
+import { isAwaitingShipment } from '../../lib/orderFirestoreStatus';
+
+function toDate(value: unknown): Date {
+  if (!value) return new Date(0);
+  if (value instanceof Date) return value;
+  if (typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return new Date(String(value));
+}
+
+function mapOrderDoc(docSnap: { id: string; data: () => Record<string, unknown> }): StoreOrder {
+  return mapOrderRecordFromFirestore(docSnap.id, docSnap.data());
+}
+
+function filterOrdersByRange(orders: StoreOrder[], from?: Date, to?: Date): StoreOrder[] {
+  if (!from || !to) return orders;
+  return orders.filter((o) => {
+    const d = toDate(o.createdAt);
+    return d >= from && d <= to;
+  });
+}
 
 export const analyticsService = {
-  // Get sales analytics
   async getSalesAnalytics(dateFrom?: Date, dateTo?: Date): Promise<SalesAnalytics> {
-    try {
-      const ordersRef = collection(db, 'orders');
-      const q = query(
-        ordersRef,
-        where('status', 'in', ['delivered', 'shipped'])
-      );
+    const ordersSnap = await getDocs(
+      query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(1500))
+    );
+    let orders = ordersSnap.docs.map(mapOrderDoc);
+    orders = filterOrdersByRange(orders, dateFrom, dateTo);
 
-      const snapshot = await getDocs(q);
-      const orders = snapshot.docs.map((doc) => doc.data());
+    const counted = orders.filter(
+      (o) => o.paymentStatus === 'paid' && ['shipped', 'delivered'].includes(o.status)
+    );
 
-      // Filter by date range if provided
-      let filteredOrders = orders;
-      if (dateFrom && dateTo) {
-        filteredOrders = orders.filter((o) => {
-          const orderDate = o.createdAt?.toDate?.() || new Date(o.createdAt);
-          return orderDate >= dateFrom && orderDate <= dateTo;
-        });
+    const totalRevenue = counted.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const totalOrders = counted.length;
+    const totalCustomers = new Set(counted.map((o) => o.customerId)).size;
+    const averageOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+
+    const refunded = orders.filter((o) => o.status === 'returned').length;
+    const refundRate = orders.length ? (refunded / orders.length) * 100 : 0;
+
+    const topProducts: ProductSales[] = counted
+      .flatMap((o) => o.items || [])
+      .reduce<ProductSales[]>((acc, item) => {
+        const lineTotal = item.price * item.quantity;
+        const existing = acc.find((p) => p.productId === item.productId);
+        if (existing) {
+          existing.unitsSold += item.quantity;
+          existing.revenue += lineTotal;
+        } else {
+          acc.push({
+            productId: item.productId,
+            productName: item.sku || item.productId,
+            unitsSold: item.quantity,
+            revenue: lineTotal,
+            returnRate: 0,
+          });
+        }
+        return acc;
+      }, [])
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    const dailySales: Record<string, SalesTrendData> = {};
+    counted.forEach((order) => {
+      const date = toDate(order.createdAt);
+      const dateStr = date.toISOString().split('T')[0];
+      if (!dailySales[dateStr]) {
+        dailySales[dateStr] = { date: dateStr, sales: 0, orders: 0, revenue: 0 };
       }
+      dailySales[dateStr].sales += 1;
+      dailySales[dateStr].orders += 1;
+      dailySales[dateStr].revenue += order.totalAmount || 0;
+    });
 
-      // Calculate metrics
-      const totalRevenue = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-      const totalOrders = filteredOrders.length;
-      const totalCustomers = new Set(filteredOrders.map((o) => o.customerId)).size;
-      const averageOrderValue = totalRevenue / totalOrders || 0;
+    const salesTrend = Object.values(dailySales).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
 
-      // Calculate refund rate
-      const refundedOrders = filteredOrders.filter((o) => o.paymentStatus === 'refunded').length;
-      const refundRate = (refundedOrders / totalOrders) * 100 || 0;
-
-      // Get top products (simplified - would need product sales data)
-      const topProducts = filteredOrders
-        .flatMap((o) => o.items || [])
-        .reduce((acc, item) => {
-          const existing = acc.find((p: any) => p.productId === item.productId);
-          if (existing) {
-            existing.unitsSold += item.quantity;
-            existing.revenue += item.subtotal;
-          } else {
-            acc.push({
-              productId: item.productId,
-              productName: item.productName,
-              unitsSold: item.quantity,
-              revenue: item.subtotal,
-              returnRate: 0,
-            });
-          }
-          return acc;
-        }, [])
-        .sort((a: any, b: any) => b.revenue - a.revenue)
-        .slice(0, 10);
-
-      // Calculate sales trend
-      const salesTrend: SalesTrendData[] = [];
-      const dailySales: { [key: string]: any } = {};
-
-      filteredOrders.forEach((order) => {
-        const date = order.createdAt?.toDate?.() || new Date(order.createdAt);
-        const dateStr = date.toISOString().split('T')[0];
-
-        if (!dailySales[dateStr]) {
-          dailySales[dateStr] = {
-            date: dateStr,
-            sales: 0,
-            orders: 0,
-            revenue: 0,
-          };
-        }
-
-        dailySales[dateStr].sales += 1;
-        dailySales[dateStr].orders += 1;
-        dailySales[dateStr].revenue += order.total || 0;
-      });
-
-      Object.values(dailySales).forEach((day: any) => {
-        salesTrend.push(day);
-      });
-
-      // Calculate conversion rate (simplified)
-      const conversionRate = (totalOrders / (totalCustomers * 5)) * 100 || 0; // Rough estimate
-
-      return {
-        totalRevenue,
-        totalOrders,
-        totalCustomers,
-        averageOrderValue,
-        conversionRate,
-        refundRate,
-        topProducts,
-        salesByCategory: [], // Would need separate implementation
-        salesTrend: salesTrend.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-      };
-    } catch (error) {
-      console.error('Error fetching sales analytics:', error);
-      throw error;
-    }
-  },
-
-  // Get revenue trend
-  async getRevenueTrend(days = 30) {
-    try {
-      const ordersRef = collection(db, 'orders');
-      const q = query(
-        ordersRef,
-        where('status', 'in', ['delivered', 'shipped']),
-        orderBy('createdAt', 'desc')
-      );
-
-      const snapshot = await getDocs(q);
-      const orders = snapshot.docs.map((doc) => doc.data());
-
-      const now = new Date();
-      const pastDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-      const filteredOrders = orders.filter((o) => {
-        const orderDate = o.createdAt?.toDate?.() || new Date(o.createdAt);
-        return orderDate >= pastDate && orderDate <= now;
-      });
-
-      const dailyRevenue: { [key: string]: number } = {};
-
-      filteredOrders.forEach((order) => {
-        const date = order.createdAt?.toDate?.() || new Date(order.createdAt);
-        const dateStr = date.toISOString().split('T')[0];
-        dailyRevenue[dateStr] = (dailyRevenue[dateStr] || 0) + (order.total || 0);
-      });
-
-      return Object.entries(dailyRevenue).map(([date, revenue]) => ({
-        date,
-        revenue,
-      }));
-    } catch (error) {
-      console.error('Error fetching revenue trend:', error);
-      throw error;
-    }
-  },
-
-  // Get customer acquisition
-  async getCustomerAcquisition(days = 30) {
-    try {
-      const customersRef = collection(db, 'customers');
-      const q = query(customersRef, orderBy('registeredAt', 'desc'));
-
-      const snapshot = await getDocs(q);
-      const customers = snapshot.docs.map((doc) => doc.data());
-
-      const now = new Date();
-      const pastDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-      const dailyAcquisition: { [key: string]: number } = {};
-
-      customers.forEach((customer) => {
-        const regDate = customer.registeredAt?.toDate?.() || new Date(customer.registeredAt);
-        if (regDate >= pastDate && regDate <= now) {
-          const dateStr = regDate.toISOString().split('T')[0];
-          dailyAcquisition[dateStr] = (dailyAcquisition[dateStr] || 0) + 1;
-        }
-      });
-
-      return Object.entries(dailyAcquisition).map(([date, count]) => ({
-        date,
-        newCustomers: count,
-      }));
-    } catch (error) {
-      console.error('Error fetching customer acquisition:', error);
-      throw error;
-    }
-  },
-
-  // Get product performance
-  async getProductPerformance(limit = 10) {
-    try {
-      const productsRef = collection(db, 'products');
-      const q = query(productsRef, where('status', '==', 'published'), orderBy('createdAt', 'desc'));
-
-      const snapshot = await getDocs(q);
-      const products = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      return products
-        .map((p) => ({
-          productId: p.id,
-          productName: p.name,
-          views: p.views || 0,
-          sales: p.unitsSold || 0,
-          revenue: (p.unitsSold || 0) * (p.price?.retail || 0),
-          conversionRate: p.views ? ((p.unitsSold || 0) / p.views) * 100 : 0,
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, limit);
-    } catch (error) {
-      console.error('Error fetching product performance:', error);
-      throw error;
-    }
-  },
-
-  // Get category performance
-  async getCategoryPerformance() {
-    try {
-      const ordersRef = collection(db, 'orders');
-      const q = query(
-        ordersRef,
-        where('status', 'in', ['delivered', 'shipped'])
-      );
-
-      const snapshot = await getDocs(q);
-      const orders = snapshot.docs.map((doc) => doc.data());
-
-      const categoryPerformance: { [key: string]: { sales: number; revenue: number } } = {};
-
-      orders.forEach((order) => {
-        order.items?.forEach((item: any) => {
-          const category = item.category || 'uncategorized';
-          if (!categoryPerformance[category]) {
-            categoryPerformance[category] = { sales: 0, revenue: 0 };
-          }
-          categoryPerformance[category].sales += item.quantity || 1;
-          categoryPerformance[category].revenue += item.subtotal || 0;
+    const categoryMap: Record<string, { sales: number; revenue: number }> = {};
+    counted.forEach((order) => {
+      order.items?.forEach((item) => {
+        const cats =
+          item.categories && item.categories.length ? item.categories : ['Uncategorized'];
+        cats.forEach((cat) => {
+          if (!categoryMap[cat]) categoryMap[cat] = { sales: 0, revenue: 0 };
+          categoryMap[cat].sales += item.quantity;
+          categoryMap[cat].revenue += item.price * item.quantity;
         });
       });
+    });
+    const totalCatRev = Object.values(categoryMap).reduce((s, c) => s + c.revenue, 0);
+    const salesByCategory: CategorySales[] = Object.entries(categoryMap).map(([category, v]) => ({
+      category,
+      sales: v.revenue,
+      percentage: totalCatRev ? (v.revenue / totalCatRev) * 100 : 0,
+    }));
 
-      const total = Object.values(categoryPerformance).reduce((sum, cat) => sum + cat.revenue, 0);
+    const conversionRate = totalCustomers ? Math.min(100, (totalOrders / (totalCustomers * 4)) * 100) : 0;
 
-      return Object.entries(categoryPerformance).map(([category, data]) => ({
-        category,
-        ...data,
-        percentage: total ? (data.revenue / total) * 100 : 0,
-      }));
-    } catch (error) {
-      console.error('Error fetching category performance:', error);
-      throw error;
-    }
+    return {
+      totalRevenue,
+      totalOrders,
+      totalCustomers,
+      averageOrderValue,
+      conversionRate,
+      refundRate,
+      topProducts,
+      salesByCategory,
+      salesTrend,
+    };
+  },
+
+  async getDashboardSnapshot(): Promise<{
+    revenue: number;
+    orderCount: number;
+    outOfStockSkus: number;
+    pendingShippingCount: number;
+  }> {
+    const snap = await getDocs(
+      query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(1200))
+    );
+    const orders = snap.docs.map(mapOrderDoc);
+    const fulfilled = orders.filter(
+      (o) => o.paymentStatus === 'paid' && ['shipped', 'delivered'].includes(o.status)
+    );
+    const revenue = fulfilled.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const orderCount = fulfilled.length;
+    const pendingShippingCount = orders.filter((o) => isAwaitingShipment(o.status)).length;
+    const outOfStockSkus = await productService.countOutOfStockSkus();
+    return {
+      revenue,
+      orderCount,
+      outOfStockSkus,
+      pendingShippingCount,
+    };
   },
 };

@@ -149,7 +149,7 @@ export const inventoryService = {
   },
 
   // Get low stock items
-  async getLowStockItems(threshold?: number) {
+  async getLowStockItems(_threshold?: number) {
     try {
       const q = query(
         collection(db, INVENTORY_COLLECTION),

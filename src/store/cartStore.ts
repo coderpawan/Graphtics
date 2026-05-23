@@ -30,13 +30,14 @@ export const useCartStore = create<CartState>(set => ({
   items: getStoredCart(),
   addItem: item =>
     set(state => {
-      const existing = state.items.find(i => i.variantId === item.variantId && i.size === item.size);
+      const sameLine = (i: CartItem) =>
+        i.productId === item.productId &&
+        i.variantId === item.variantId &&
+        i.size === item.size &&
+        i.color === item.color;
+      const existing = state.items.find(sameLine);
       const updatedItems = existing
-        ? state.items.map(i =>
-            i.variantId === item.variantId && i.size === item.size
-              ? { ...i, quantity: i.quantity + item.quantity }
-              : i,
-          )
+        ? state.items.map(i => (sameLine(i) ? { ...i, quantity: i.quantity + item.quantity } : i))
         : [...state.items, item];
       persistCart(updatedItems);
       return { items: updatedItems };
@@ -53,8 +54,9 @@ export const useCartStore = create<CartState>(set => ({
       persistCart(updatedItems);
       return { items: updatedItems };
     }),
-  clearCart: () => {
-    persistCart([]);
-    return { items: [] };
-  },
+  clearCart: () =>
+    set(() => {
+      persistCart([]);
+      return { items: [] };
+    }),
 }));

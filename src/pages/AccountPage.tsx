@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { getOrdersByUser, getProductsByIds } from '../firebase/firestore';
 import type { Address, UserPreferences } from '../types';
+import { getProductListingImage } from '../lib/productMedia';
 
 const membershipLabel = {
   bronze: 'Bronze Member',
@@ -36,6 +37,7 @@ export default function AccountPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'profile' | 'addresses' | 'preferences' | 'security'>('overview');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [phoneAlt, setPhoneAlt] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | 'non-binary' | 'other'>('other');
   const [dob, setDob] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -96,6 +98,7 @@ export default function AccountPage() {
 
     setName(user.name || '');
     setPhone(user.phone || '');
+    setPhoneAlt(user.phoneAlt || '');
     setGender(user.gender || 'other');
     setDob(user.dob || '');
     setAddresses(user.savedAddresses || []);
@@ -105,7 +108,7 @@ export default function AccountPage() {
   }, [user]);
 
   const recentOrdersCount = orders.length;
-  const wishlistCount = user?.wishlist.length ?? 0;
+  const wishlistCount = user?.wishlist?.length ?? 0;
   const recentlyViewedCount = recentViewedIds.length;
 
   const stats = useMemo(
@@ -178,7 +181,11 @@ export default function AccountPage() {
 
   const updatePersonalDetails = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await updateProfile({ name: name.trim(), phone: phone.trim(), gender, dob });
+    const primary = phone.trim();
+    if (primary.length < 8) {
+      return;
+    }
+    await updateProfile({ name: name.trim(), phone: primary, phoneAlt: phoneAlt.trim(), gender, dob });
   };
 
   const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -275,7 +282,11 @@ export default function AccountPage() {
               ) : recentProducts.length ? (
                 recentProducts.slice(0, 4).map(product => (
                   <div key={product.id} className="rounded-3xl border border-white/10 bg-slate-950/60 p-4">
-                    <img src={product.images[0]} alt={product.name} className="h-28 w-full rounded-3xl object-cover" />
+                    <img
+                      src={getProductListingImage(product)}
+                      alt={product.name}
+                      className="h-28 w-full rounded-3xl object-cover"
+                    />
                     <p className="mt-3 text-white">{product.name}</p>
                     <p className="text-sm text-slate-400">{product.category}</p>
                   </div>
@@ -315,6 +326,7 @@ export default function AccountPage() {
                   <h3 className="text-lg font-semibold text-white">Profile overview</h3>
                   <div className="mt-4 space-y-3 text-sm">
                     <p><span className="text-slate-400">Phone:</span> {user.phone || 'Not set'}</p>
+                    <p><span className="text-slate-400">Alternate phone:</span> {user.phoneAlt || 'Not set'}</p>
                     <p><span className="text-slate-400">Gender:</span> {user.gender || 'Not set'}</p>
                     <p><span className="text-slate-400">Date of birth:</span> {user.dob || 'Not set'}</p>
                     <p><span className="text-slate-400">Primary shipping address:</span> {addresses.find(address => address.isDefaultShipping)?.addressLine1 ?? 'Not set'}</p>
@@ -333,14 +345,18 @@ export default function AccountPage() {
 
             {activeTab === 'profile' && (
               <form onSubmit={updatePersonalDetails} className="space-y-4 text-slate-300">
+                <div>
+                  <label className="text-sm text-slate-400">Full name</label>
+                  <Input value={name} onChange={e => setName(e.target.value)} />
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-sm text-slate-400">Full name</label>
-                    <Input value={name} onChange={e => setName(e.target.value)} />
+                    <label className="text-sm text-slate-400">Phone number (required)</label>
+                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="At least 8 digits" />
                   </div>
                   <div>
-                    <label className="text-sm text-slate-400">Phone number</label>
-                    <Input value={phone} onChange={e => setPhone(e.target.value)} />
+                    <label className="text-sm text-slate-400">Alternate phone (optional)</label>
+                    <Input value={phoneAlt} onChange={e => setPhoneAlt(e.target.value)} />
                   </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

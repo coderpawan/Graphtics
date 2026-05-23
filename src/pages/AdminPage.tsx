@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { ChartBar, ShoppingCart, Users, Tag } from 'lucide-react';
 import { Card } from '../components/ui/Card';
+import { formatInr } from '../lib/formatCurrency';
 
 const stats = [
-  { label: 'Revenue', value: '$42.6K', icon: ChartBar },
+  { label: 'Revenue', value: formatInr(42600), icon: ChartBar },
   { label: 'Orders', value: '212', icon: ShoppingCart },
   { label: 'Customers', value: '1.8K', icon: Users },
   { label: 'Inventory', value: '84 items', icon: Tag },

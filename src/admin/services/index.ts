@@ -10,3 +10,5 @@ export { analyticsService } from './analyticsService';
 export { activityService } from './activityService';
 export { storageService } from './storageService';
 export { reportService } from './reportService';
+export { metadataService } from './metadataService';
+export { skuInventoryService } from './skuInventoryService';

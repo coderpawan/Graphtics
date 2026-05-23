@@ -144,6 +144,8 @@ orders/
       └── updatedAt: timestamp
 ```
 
+> **Storefront / admin (`orders` in this repo)** also uses: `orderId`, `customerId` / `userId`, line items with `sku`, `size`, `color`, `totalAmount` or `total`, `paymentStatus`: `'pending' | 'paid' | 'failed'`, fulfillment `status` (`pending` → `confirmed` → `printed` → `packed` → `shipped` → `delivered`), `trackingCarrier`, `trackingUrl`, `fulfillmentEvents`, `adminNotes`, `returnRequest`, **`cancelledAt`**, **`cancelReason`** (customer or admin), **`statusBeforeAdminCancel`** (set only on admin dashboard cancel — enables “remove cancellation”), and **`packageTrackingPhotos`**: `{ id, url, caption?, uploadedAt }[]` (label / parcel images; files in Storage under `orders/{id}/package-tracking/`).
+
 ### 4. customers
 Customer profiles collection
 
